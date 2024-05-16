@@ -2,6 +2,12 @@ spring:
   application:
     name: stock-market-analyzer
   datasource:
-    url: jdbc:mysql://localhost:3306
+    url: jdbc:mysql://localhost:3306/demo?createDatabaseIfNotExist=true
     username: root
     password: root
+  jpa:
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+    hibernate:
+      ddl-auto: update
