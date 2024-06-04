@@ -8,4 +8,6 @@ import java.util.Optional;
 public interface UserRepository extends JpaRepository<CustomUser, Long> {
     Optional<CustomUser> findCustomUserByUsername(String username);
 
+    boolean existsByMonitoredStockIdsContains(String monitoredStockIds);
+
 }
