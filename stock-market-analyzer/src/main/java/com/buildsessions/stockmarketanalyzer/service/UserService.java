@@ -10,6 +10,8 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -51,6 +53,19 @@ public class UserService implements UserDetailsService {
             return user.getMonitoredStockIds();
         }
         return null;
+    }
+
+    public List<Stock> getMonitoredStocksForUser(Long userId) {
+        CustomUser user = userRepository.findById(userId).orElse(null);
+        List<Stock> monitoredStocks = new ArrayList<>();
+        for (Long stockId: user.getMonitoredStockIds()) {
+            monitoredStocks.add(stockService.getStockById(stockId));
+        }
+        return monitoredStocks;
+    }
+
+    public CustomUser findByUsername(String username) {
+        return userRepository.findCustomUserByUsername(username).orElse(null);
     }
 
     public void addStockToUser(Long userId, String symbol) {

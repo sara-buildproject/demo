@@ -1,4 +1,4 @@
-package com.buildsessions.stockmarketanalyzer.model;
+package com.buildsessions.stockmarketanalyzer.model.alphavantage;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 

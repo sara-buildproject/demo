@@ -11,7 +11,7 @@ spring:
         dialect: org.hibernate.dialect.MySQLDialect
     hibernate:
       ddl-auto: update
-alpha:
-  vantage:
+financial:
+  modelingprep:
     api:
-      key: 59TW5REYQ45BQ46D
+      key: replace_me

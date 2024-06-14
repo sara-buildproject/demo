@@ -2,15 +2,16 @@ package com.buildsessions.stockmarketanalyzer.service;
 
 import com.buildsessions.stockmarketanalyzer.entity.Stock;
 import com.buildsessions.stockmarketanalyzer.entity.StockHistory;
-import com.buildsessions.stockmarketanalyzer.model.AlphaVantageGlobalQuote;
-import com.buildsessions.stockmarketanalyzer.model.AlphaVantageGlobalQuoteResponse;
-import com.buildsessions.stockmarketanalyzer.model.AlphaVantageSearchResponse;
-import com.buildsessions.stockmarketanalyzer.model.AlphaVantageSymbolMatch;
+import com.buildsessions.stockmarketanalyzer.model.financialmodeling.FmpHistoricalData;
+import com.buildsessions.stockmarketanalyzer.model.financialmodeling.FmpHistoricalResponse;
+import com.buildsessions.stockmarketanalyzer.model.financialmodeling.FmpStockQuoteResponse;
+import com.buildsessions.stockmarketanalyzer.model.financialmodeling.FmpStockSearchResponse;
 import com.buildsessions.stockmarketanalyzer.repository.StockHistoryRepository;
 import com.buildsessions.stockmarketanalyzer.repository.StockRepository;
 import com.buildsessions.stockmarketanalyzer.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -18,7 +19,6 @@ import java.sql.Date;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 @Service
 public class StockService {
@@ -31,10 +31,10 @@ public class StockService {
     @Autowired
     private StockHistoryRepository stockHistoryRepository;
 
-    @Value("${alpha.vantage.api.key}")
-    private String alphaVantageApiKey;
+    @Value("${financial.modelingprep.api.key}")
+    private String fmpApiKey;
 
-    private final String ALPHA_VANTAGE_BASE_URL = "https://www.alphavantage.co/query";
+    private final String FMP_BASE_URL = "https://financialmodelingprep.com/api/v3";
 
     public Stock getOrCreateStockBySymbol(String symbol) {
         Stock stock = stockRepository.findBySymbol(symbol);
@@ -48,25 +48,30 @@ public class StockService {
         return stockRepository.findBySymbol(symbol);
     }
 
-    public Stock fetchAndStoreStockInfo(String symbol) {
-        String searchUrl = ALPHA_VANTAGE_BASE_URL + "?function=SYMBOL_SEARCH&keywords=" + symbol + "&apikey=" + alphaVantageApiKey;
-        RestTemplate restTemplate = new RestTemplate();
-        AlphaVantageSearchResponse searchResponse = restTemplate.getForObject(searchUrl, AlphaVantageSearchResponse.class);
+    public Stock getStockById(Long stockId) {
+        return stockRepository.findById(stockId).get();
+    }
 
-        if (searchResponse != null && !searchResponse.getBestMatches().isEmpty()) {
-            AlphaVantageSymbolMatch symbolMatch = searchResponse.getBestMatches().get(0);
+    public Stock fetchAndStoreStockInfo(String symbol) {
+        String searchUrl = FMP_BASE_URL + "/search?query=" + symbol + "&apikey=" + fmpApiKey;
+        RestTemplate restTemplate = new RestTemplate();
+        FmpStockSearchResponse[] searchResponse = restTemplate.getForObject(searchUrl, FmpStockSearchResponse[].class);
+
+        if (searchResponse != null && searchResponse.length > 0) {
+            FmpStockSearchResponse symbolMatch = searchResponse[0];
+
             String retrievedSymbol = symbolMatch.getSymbol();
             String name = symbolMatch.getName();
 
-            String quoteUrl = ALPHA_VANTAGE_BASE_URL + "?function=GLOBAL_QUOTE&symbol=" + symbol + "&apikey=" + alphaVantageApiKey;
-            AlphaVantageGlobalQuoteResponse quoteResponse = restTemplate.getForObject(quoteUrl, AlphaVantageGlobalQuoteResponse.class);
+            String quoteUrl = FMP_BASE_URL + "/quote/" + symbol + "?apikey=" + fmpApiKey;
+            FmpStockQuoteResponse[] quoteResponse = restTemplate.getForObject(quoteUrl, FmpStockQuoteResponse[].class);
 
-            if (quoteResponse != null && quoteResponse.getGlobalQuote() != null) {
-                AlphaVantageGlobalQuote globalQuote = quoteResponse.getGlobalQuote();
+            if (quoteResponse != null && quoteResponse.length > 0) {
+                FmpStockQuoteResponse quote = quoteResponse[0];
 
-                double currentPrice = Double.parseDouble(globalQuote.getCurrentPrice());
-                double priceChange = Double.parseDouble(globalQuote.getPriceChange());
-                double percentageChange = Double.parseDouble(globalQuote.getPercentageChange().replace("%", ""));
+                double currentPrice = quote.getPrice();
+                double priceChange = quote.getChange();
+                double percentageChange = quote.getChangesPercentage();
 
                 Stock stock = new Stock();
                 stock.setSymbol(retrievedSymbol.toUpperCase());
@@ -74,47 +79,52 @@ public class StockService {
                 stock.setPercentageChange(percentageChange);
                 stock.setPriceChange(priceChange);
                 stock.setName(name);
-
                 return stockRepository.save(stock);
             } else {
-                throw new RuntimeException("Failed to fetch global quote for the requested symbol: " + retrievedSymbol);
+                throw new RuntimeException("Failed to fetch stock quote for symbol: " + symbol);
             }
-
         } else {
-            throw new RuntimeException("No match found for the requested symbol: " + symbol);
+            throw new RuntimeException("No match found for symbol: " + symbol);
         }
     }
 
     public List<StockHistory> getHistoricalStockData(String symbol, LocalDate startDate, LocalDate endDate) {
         List<StockHistory> stockHistoryList = stockHistoryRepository.findBySymbolAndDateBetween(symbol, Date.valueOf(startDate), Date.valueOf(endDate));
         if (stockHistoryList.isEmpty()) {
-            stockHistoryList = fetchAndStoreHistoricalStockData(symbol, Date.valueOf(startDate), Date.valueOf(endDate));
+            stockHistoryList = fetchAndStoreHistoricalStockData(symbol);
         }
         return stockHistoryList;
     }
 
-    public List<StockHistory> fetchAndStoreHistoricalStockData(String symbol, Date startDate, Date endDate) {
-        String url = ALPHA_VANTAGE_BASE_URL + "?function=TIME_SERIES_WEEKLY&symbol=" + symbol + "&apikey=" + alphaVantageApiKey;
+    public List<StockHistory> fetchAndStoreHistoricalStockData(String symbol) {
+        String url = FMP_BASE_URL + "/historical-price-full/" + symbol + "?timeseries=52&apikey=" + fmpApiKey;
         RestTemplate restTemplate = new RestTemplate();
-        Map<String, Object> response = restTemplate.getForObject(url, Map.class);
+        FmpHistoricalResponse response = restTemplate.getForObject(url, FmpHistoricalResponse.class);
 
-        if (response != null && response.containsKey("Weekly Time Series")) {
-            Map<String, Map<String, String>> timeSeries = (Map<String, Map<String, String>>) response.get("Weekly Time Series");
+        if (response != null && response.getHistoricalData() != null) {
             List<StockHistory> stockHistoryList = new ArrayList<>();
 
-            for (Map.Entry<String, Map<String, String>> entry : timeSeries.entrySet()) {
-                Date currentDate = Date.valueOf(entry.getKey());
-                if (currentDate.compareTo(startDate) >= 0 && currentDate.compareTo(endDate) <= 0) {
+            int count = 0;
+            for (FmpHistoricalData entry : response.getHistoricalData()) {
+                Date currentDate = Date.valueOf((entry.getDate()));
+
+                if (currentDate != null) {
                     StockHistory stockHistory = new StockHistory();
-                    stockHistory.setDate(Date.valueOf(entry.getKey()));
-                    stockHistory.setClose(Double.parseDouble(entry.getValue().get("4. close")));
+                    stockHistory.setDate(currentDate);
+                    stockHistory.setClose(entry.getClose());
                     stockHistory.setSymbol(symbol);
                     stockHistoryList.add(stockHistory);
+                    count++;
+                }
+
+                if (count >= 52) {
+                    break;
                 }
             }
+
             return stockHistoryRepository.saveAll(stockHistoryList);
         } else {
-            throw new RuntimeException("Failed to fetch historical data for the requested symbol: " + symbol);
+            throw new RuntimeException("Failed to fetch historical data for symbol: " + symbol);
         }
     }
 
@@ -131,4 +141,12 @@ public class StockService {
         return userRepository.existsByMonitoredStockIdsContains(stockId.toString());
     }
 
+    @Scheduled(cron = "0 * * * *") // Runs every hour
+    public void refreshAllStockData() {
+        List<Stock> allStocks = stockRepository.findAll();
+        for (Stock stock : allStocks) {
+            fetchAndStoreStockInfo(stock.getSymbol());
+            fetchAndStoreHistoricalStockData(stock.getSymbol());
+        }
+    }
 }

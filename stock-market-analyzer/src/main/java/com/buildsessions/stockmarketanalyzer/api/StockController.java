@@ -1,6 +1,7 @@
 package com.buildsessions.stockmarketanalyzer.api;
 
 
+import com.buildsessions.stockmarketanalyzer.entity.Stock;
 import com.buildsessions.stockmarketanalyzer.entity.StockHistory;
 import com.buildsessions.stockmarketanalyzer.service.StockService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,11 +17,21 @@ import java.time.LocalDate;
 import java.util.List;
 
 @RestController
-@RequestMapping("/stock")
+@RequestMapping("/stocks")
 public class StockController {
 
     @Autowired
     private StockService stockService;
+
+    @GetMapping("/{symbol}")
+    public ResponseEntity<Stock> getStockDetails(@PathVariable String symbol) {
+        Stock stock = stockService.getStockBySymbol(symbol);
+        if (stock != null) {
+            return new ResponseEntity<>(stock, HttpStatus.OK);
+        } else {
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        }
+    }
 
     @GetMapping("/{symbol}/history")
     public ResponseEntity<List<StockHistory>> getStockHistory(
